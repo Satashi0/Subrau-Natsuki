@@ -1,0 +1,128 @@
+
+import discord
+from discord.ext import commands
+import os
+import threading
+from flask import Flask
+
+# Configuration du serveur Flask (webserver.py simulé ici pour exemple)
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot is running!"
+
+# Fonction pour démarrer le serveur Flask
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)
+
+# Token du bot (définissez TOKENbot dans les variables d'environnement sur Railway)
+TOKEN = os.getenv("TOKENbot")
+if not TOKEN:
+    raise ValueError("Le token du bot n'est pas défini. Assurez-vous de l'ajouter dans les variables d'environnement.")
+
+# Configuration des intents Discord
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+intents.reactions = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+# ID du salon où les messages seront envoyés
+CHANNEL_ID = 1309243869157658744  # Remplace avec l'ID de ton salon
+
+# Liste des rôles et emojis correspondants
+roles_config = {
+    "genre": {
+        "Homme": "♂️",
+        "Femme": "♀️",
+        "Autre": "☘️"
+    },
+    "âge": {
+        "Mineur": "🔞",
+        "Majeur": "✅"
+    },
+    "orientation": {
+        "Hétérosexuel": "❤️",
+        "homosexuel": "🏳️‍🌈",
+        "Compliqué": "🤔"
+    },
+    "relation": {
+        "célibataire": "💔",
+        "En couple": "💞"
+    }
+}
+
+@bot.event
+async def on_ready():
+    print(f"Connecté en tant que {bot.user}!")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_roles(ctx):
+    """Commande pour configurer les rôles réactifs."""
+    channel = bot.get_channel(CHANNEL_ID)
+
+    if not channel:
+        await ctx.send("Salon introuvable. Vérifiez l'ID du salon.")
+        return
+
+    for category, roles in roles_config.items():
+        description = "\n".join([f"{emoji} : {role}" for role, emoji in roles.items()])
+        embed = discord.Embed(title=f"Choisissez votre {category.capitalize()}", description=description, color=0x00ff00)
+        message = await channel.send(embed=embed)
+
+        for emoji in roles.values():
+            await message.add_reaction(emoji)
+
+@bot.event
+async def on_raw_reaction_add(payload):
+    if payload.user_id == bot.user.id:
+        return
+
+    guild = bot.get_guild(payload.guild_id)
+    if not guild:
+        return
+
+    member = guild.get_member(payload.user_id)
+    if not member:
+        return
+
+    for category, roles in roles_config.items():
+        for role_name, emoji in roles.items():
+            if str(payload.emoji) == emoji:
+                role = discord.utils.get(guild.roles, name=role_name)
+                if role:
+                    await member.add_roles(role)
+                    print(f"Ajouté {role.name} à {member.name}")
+                return
+
+@bot.event
+async def on_raw_reaction_remove(payload):
+    if payload.user_id == bot.user.id:
+        return
+
+    guild = bot.get_guild(payload.guild_id)
+    if not guild:
+        return
+
+    member = guild.get_member(payload.user_id)
+    if not member:
+        return
+
+    for category, roles in roles_config.items():
+        for role_name, emoji in roles.items():
+            if str(payload.emoji) == emoji:
+                role = discord.utils.get(guild.roles, name=role_name)
+                if role:
+                    await member.remove_roles(role)
+                    print(f"Retiré {role.name} de {member.name}")
+                return
+
+# Démarre Flask dans un thread séparé
+threading.Thread(target=run_flask).start()
+
+# Lancement du bot Discord
+bot.run(TOKEN)
+
